@@ -1,0 +1,11 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "analyst_agent": "research_assistant.agents.analyst.graph:graph",
+    "interview_agent": "research_assistant.agents.interview.graph:graph",
+    "single_analyst_research": "research_assistant.agents.research.graph:graph",
+    "report_agent": "research_assistant.agents.report.graph:graph",
+    "research_assistant": "research_assistant.orchestration.graph:graph"
+  },
+  "env": ".env"
+}
