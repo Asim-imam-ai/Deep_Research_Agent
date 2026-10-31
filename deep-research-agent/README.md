@@ -1,170 +1,233 @@
-# Deep Research Agent · Deep Research Studio
+# Deep Research Agent
 
-**An AI-powered, human-supervised research platform built with LangGraph, FastAPI, PostgreSQL and Next.js.**
+**An open-source, human-in-the-loop, multi-agent research platform built with LangGraph, FastAPI, PostgreSQL, and Next.js.**
 
-The repository contains a durable multi-agent backend **and a fully integrated web interface**. It orchestrates specialist analysts, evidence gathering and interviews, supports human approval before research proceeds, and stores structured research reports.
+Deep Research Agent turns a research question into an organized investigation. It generates specialist analyst profiles, requests human approval, conducts evidence-backed web research, synthesizes findings, and produces a source-linked Markdown report in a private web workspace.
+
+> **Project status:** Actively developed. The application has been demonstrated locally with completed research reports. Review generated findings and citations independently before relying on them for consequential decisions.
 
 ## Highlights
 
-- **LangGraph workflows:** analyst generation, pause for approval, parallel interviews, synthesis and report production.
-- **Research jobs:** PostgreSQL-backed queue, worker leases, restartable checkpoints and durable job events.
-- **FastAPI:** typed research, feedback, analyst, interview, report and health endpoints with `X-API-Key` authentication.
-- **Research guardrails:** input bounds, citation URL validation and report checks.
-- **Observability:** LangSmith tracing hooks, execution timings and usage counters.
-- **Professional frontend:** Next.js 15, TypeScript, Tailwind CSS 4, private sign-in, responsive workspace, analyst approval, SSE progress, interviews and Markdown report export.
+- **Multi-agent orchestration:** LangGraph coordinates analyst generation, interviews, research sections, and final synthesis.
+- **Human-in-the-loop review:** Approve or provide feedback on proposed research analysts before investigations continue.
+- **Evidence-backed research:** Tavily-powered web discovery, URL validation, source collection, and deduplication.
+- **Structured reports:** Introduction, findings, conclusion, and a reference list, with Markdown export.
+- **Durable execution:** PostgreSQL-backed research runs and checkpointing enable progress tracking and workflow recovery.
+- **Research dashboard:** Next.js interface for creating projects, reviewing analysts, monitoring events, exploring the library, and reading reports.
+- **Private workspace:** Admin authentication and a server-side proxy for backend access.
+- **Developer tooling:** `uv`, Ruff, pytest, Docker Compose, and Alembic migrations.
 
-## Architecture
+## Technology stack
+
+| Layer | Technologies |
+| --- | --- |
+| Agent orchestration | Python, LangGraph, LangChain |
+| Research and retrieval | Tavily Search API |
+| LLM integration | Configurable chat-model factory |
+| Backend API | FastAPI |
+| Persistence and checkpoints | PostgreSQL, SQLAlchemy, psycopg, LangGraph checkpointing |
+| Database migrations | Alembic |
+| Background processing | Python research worker |
+| Frontend | Next.js, React, TypeScript |
+| Tooling | uv, pytest, Ruff, Docker Compose |
+
+## How it works
 
 ```text
-Browser (Next.js :3000)
-   │ signed HttpOnly cookie
-   ▼
-Next.js API proxy ── X-API-Key (server only) ──► FastAPI :8000
-                                                   │
-                                    PostgreSQL research tables & events
-                                                   │
-                                    LangGraph background worker
-                                                   │
-                               LangGraph Postgres checkpoints + LLM + Tavily
+Research question
+      |
+      v
+Generate specialist analysts
+      |
+      v
+Human review / approval
+      |
+      v
+Parallel analyst interviews
+      |
+      +--> Web search --> Evidence validation --> Source collection
+      |
+      v
+Evidence-backed research sections
+      |
+      v
+Final report synthesis
+      |
+      v
+Report validation and PostgreSQL persistence
+      |
+      v
+Research dashboard and Markdown export
 ```
 
-## Requirements
+## Repository structure
 
-- Python 3.12, [`uv`](https://docs.astral.sh/uv/)
-- Node.js 20+ and npm
-- Docker Desktop with Docker Compose
-- OpenAI API key and Tavily API key to execute actual research
+```text
+deep-research-agent/
+├── src/research_assistant/
+│   ├── agents/                # Analyst, interview, research, and report graphs
+│   ├── api/                   # FastAPI endpoints
+│   ├── core/                  # Configuration and core exceptions
+│   ├── guardrails/            # URL and output validation
+│   ├── infrastructure/        # Database, worker, and LLM integrations
+│   ├── orchestration/         # End-to-end LangGraph workflow
+│   ├── prompts/               # Agent prompt templates
+│   ├── schemas/               # Shared typed data models
+│   ├── services/              # Application services
+│   └── tools/                 # Web search integrations
+├── frontend/
+│   ├── app/                   # Next.js routes and server handlers
+│   ├── components/            # UI components
+│   └── lib/                   # Frontend utilities
+├── migrations/                # Database migrations
+├── scripts/                   # Worker and maintenance scripts
+├── tests/                     # Unit and integration tests
+├── docs/                      # Additional documentation
+├── .env.example               # Backend environment template
+├── docker-compose.yml
+├── Dockerfile
+├── alembic.ini
+├── langgraph.json
+├── pyproject.toml
+├── uv.lock
+└── README.md
+```
 
-## 1. Configure the backend
+## Prerequisites
 
-From the repository root (`deep-research-agent`):
+- **Python 3.12** (the version used in local development)
+- [uv](https://docs.astral.sh/uv/) for Python dependencies
+- **Node.js and npm** compatible with `frontend/package.json`
+- **Docker Desktop** (or an existing compatible PostgreSQL instance)
+- API credentials for the LLM provider configured in the backend and for [Tavily](https://tavily.com/)
+
+## Getting started
+
+Run these commands from the **`deep-research-agent` directory that contains `src/`, `frontend/`, and the backend `pyproject.toml`**.
+
+### 1. Clone and install backend dependencies
+
+```powershell
+git clone <YOUR-REPOSITORY-URL>
+cd deep-research-agent
+uv sync
+```
+
+### 2. Configure backend environment
 
 ```powershell
 Copy-Item .env.example .env
-uv sync --group dev
 ```
 
-Set `OPENAI_API_KEY`, `TAVILY_API_KEY`, a long `API_KEY`, and PostgreSQL credentials in `.env`. Avoid committing secrets. If running the Python API directly on your host, its `DATABASE_URL` and `CHECKPOINT_DATABASE_URL` must use the **published host port** (for example 5433). Inside Compose services, use `postgres:5432`.
+Edit `.env` and supply the required values documented in `.env.example`, including your Tavily API key, the configured LLM provider credentials, and the PostgreSQL connection settings. **Never commit real secrets.**
 
-Start PostgreSQL:
+### 3. Start PostgreSQL and apply migrations
 
 ```powershell
-docker compose up -d postgres
-docker compose ps
+docker compose up -d
+uv run alembic upgrade head
 ```
 
-Your Compose file must publish PostgreSQL to the host if you are running FastAPI locally. Example:
+Confirm the database host, port, username, password, and database name agree with your `.env` and `docker-compose.yml`. Local development has used PostgreSQL exposed on host port `5433`; use your actual configuration.
 
-```yaml
-ports:
-  - "127.0.0.1:5433:5432"
-```
+### 4. Start the API
 
-Then configure host database URLs accordingly:
-
-```text
-DATABASE_URL=postgresql+psycopg://research:<PASSWORD>@127.0.0.1:5433/research
-CHECKPOINT_DATABASE_URL=postgresql://research:<PASSWORD>@127.0.0.1:5433/research
-```
-
-Initialize tables:
-
-```powershell
-uv run python scripts/setup_database.py
-```
-
-> Existing PostgreSQL volumes preserve their original database passwords; changing `.env` does not change an already initialized database user's password.
-
-## 2. Run FastAPI and the worker
-
-**Terminal A — API:**
+In a new terminal at the repository root:
 
 ```powershell
 uv run uvicorn research_assistant.api.main:app --reload --port 8000
 ```
 
-**Terminal B — worker:**
+API: `http://localhost:8000` · Interactive API documentation (if enabled): `http://localhost:8000/docs`.
+
+### 5. Start the research worker
+
+In a separate root-level terminal:
 
 ```powershell
 uv run python scripts/run_worker.py
 ```
 
-API docs: **http://127.0.0.1:8000/docs**. Research endpoints require your backend `X-API-Key`.
+The worker processes research jobs and persists completed reports. Leave it running while testing research projects.
 
-## 3. Run the frontend
+### 6. Configure and start the frontend
 
-**Terminal C:**
+In another terminal:
 
 ```powershell
 cd frontend
-Copy-Item .env.example .env.local
 npm install
+Copy-Item .env.example .env.local
 npm run dev
 ```
 
-Set `BACKEND_API_URL=http://127.0.0.1:8000`, `BACKEND_API_KEY` to match the backend `API_KEY`, and a strong `FRONTEND_USERNAME`, `FRONTEND_PASSWORD`, `SESSION_SECRET` (32+ characters). Open **http://localhost:3000**.
+Set the keys requested by `frontend/.env.example`, including the private workspace credentials, session secret, backend URL, and backend access key as applicable. The frontend runs at **http://localhost:3000** by default.
 
-### Research journey
+### 7. Run a research project
 
-1. **Sign in** to the private studio.
-2. **New research:** provide topic, analyst count (1–8) and number of interview turns (1–8).
-3. **Research workspace:** follow the durable event timeline.
-4. **Human-in-the-loop:** when `awaiting_feedback`, review the generated analyst cards and approve or ask for revisions.
-5. **Monitor:** the background worker continues interviews and report synthesis.
-6. **Read & export:** the final research report appears when `research_completed` emits its `report_id`; download the Markdown report.
+1. Sign in to the private research workspace.
+2. Create a new project and enter a research question.
+3. Select the analyst count and interview depth.
+4. Review and approve the generated analysts.
+5. Monitor progress, inspect evidence, and open the completed report.
+6. Export the Markdown report if needed.
 
-## Backend API reference
+## Tests and code quality
 
-| Method | Endpoint | Purpose |
-|---|---|---|
-| POST | `/api/v1/research` | Enqueue research |
-| GET | `/api/v1/research` | Paginated run list |
-| GET | `/api/v1/research/{run_id}` | Run status/details |
-| POST | `/api/v1/research/{run_id}/feedback` | Approve or reject analysts |
-| GET | `/api/v1/research/{run_id}/stream` | Replayable SSE activity |
-| GET | `/api/v1/research/{run_id}/analysts` | Persisted analyst profiles |
-| GET | `/api/v1/research/{run_id}/interviews` | Persisted interviews |
-| GET | `/api/v1/reports/{report_id}` | Final report |
-| GET | `/api/v1/health` | Database readiness |
-
-The frontend proxies these backend routes through `/api/backend/*` and adds the API key server-side. The authentication session must be valid to access the proxy.
-
-## Tests and quality
+From the backend project root:
 
 ```powershell
-uv run ruff check src tests
 uv run ruff format --check src tests
-uv run pytest -rs -q
-cd frontend
-npm run lint
-npm run typecheck
-npm run build
+uv run ruff check src tests
+uv run pytest -q
 ```
 
-Database integration tests may skip unless a separate disposable `TEST_DATABASE_URL` is provided. A passing unit suite does **not** prove live LLM/Tavily calls, worker checkpoint recovery or actual cloud deployment have been validated.
+To format code locally:
 
-## Project map
-
-```text
-frontend/                  Next.js application and API proxy
-src/research_assistant/   Agents, orchestration, API and infrastructure
-migrations/               Alembic schema migrations
-scripts/                  Database setup and worker commands
-tests/                    Unit, API, integration and quality evaluations
-docs/                     Architecture, decisions and deployment guidance
-Dockerfile                Backend container
-docker-compose.yml         Backend services + PostgreSQL
+```powershell
+uv run ruff format src tests
 ```
 
-## Deployment and security
+The latest reported local suite completed with **25 passed and 2 skipped**. This is a local development result, not a continuous-integration guarantee.
 
-- Current setup is **single-operator**, not multi-tenant. Shared API key plus a signed login cookie does **not** enforce user ownership of research runs.
-- Never expose secrets through frontend `NEXT_PUBLIC_` environment variables; never commit `.env` or `.env.local`.
-- Deploy over HTTPS; add a proper identity provider, per-user ownership checks, CSRF defenses and distributed rate limiting before a public multi-user launch.
-- Use managed PostgreSQL, automated backups, secret management, structured telemetry and worker health monitoring.
-- Long-running SSE streams require proxy/load-balancer support for streaming and appropriate idle timeouts.
-- See `docs/deployment/production.md` for backend operational considerations.
+## Configuration and security
+
+- Keep `.env` and `frontend/.env.local` **out of version control**.
+- Publish only placeholder templates such as `.env.example` and `frontend/.env.example`.
+- Do not expose backend API keys, Tavily keys, LLM credentials, or session secrets to browser-side code.
+- Change default/example credentials before any deployment.
+- Use HTTPS, secure cookies, strong secrets, access controls, logging, and production-grade secret management when deploying beyond localhost.
+- Treat retrieved web pages as untrusted evidence; verify important claims and their citations.
+- Review generated reports for factual errors, source quality, and unsupported claims.
+
+## Current capabilities and limitations
+
+The application supports research creation, analyst review, web retrieval, structured report generation, persisted project records, and Markdown export. Quality depends on search availability, model behavior, source validity, and deployment configuration. Generated citations should be checked against original sources. Production readiness, scalability, and third-party service limits have not been independently audited.
+
+## Roadmap
+
+Potential future improvements include automated citation-to-claim verification, stronger source-quality ranking, additional export formats, automated deployment/CI checks, comprehensive database integration tests, observability dashboards, and expanded authentication and team collaboration.
+
+## Contributing
+
+Contributions, issue reports, documentation improvements, and constructive reviews are welcome.
+
+1. Open an issue to discuss substantial changes.
+2. Create a feature branch from the default branch.
+3. Add focused tests for bug fixes and new behavior.
+4. Run Ruff and pytest before opening a pull request.
+5. Document new configuration options without including credentials.
+
+Please follow any repository-specific contribution or conduct policies once those files are added.
 
 ## License
 
-No license is granted by this README. Add a LICENSE file only if you intend to publish or distribute the project under a particular license.
+**License selection pending.** To make the repository explicitly open source, add a root-level `LICENSE` file with an OSI-approved license (for example, MIT or Apache-2.0) and update this section to identify the chosen license. Public visibility alone does not grant an open-source license.
+
+## Suggested repository topics
+
+`langgraph` · `deep-research` · `ai-agents` · `multi-agent-systems` · `agentic-ai` · `generative-ai` · `human-in-the-loop` · `research-automation` · `fastapi` · `nextjs` · `postgresql` · `tavily` · `python` · `typescript` · `open-source`
+
+---
+
+Built to make AI-assisted research more structured, traceable, and reviewable.
